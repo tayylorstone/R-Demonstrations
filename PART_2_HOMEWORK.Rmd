@@ -1,0 +1,663 @@
+---
+title: "Part_2_Homework"
+author: "Paola Carolina Suarez & Taylor Stone"
+date: "2024-10-24"
+output: pdf_document
+---
+
+### Part 2 Homework
+### Programmming in R
+## Universidad Carlos III de Madrid
+
+For the development of the part 2 of the homework , we will use the data set "diamonds" provided by R, and also additional packages such as h2O and Caret to do testing and predictions of the variables.
+
+```{r}
+library(ggplot2)
+data(diamonds)
+```
+
+# I.Using the variables of your dataset, apply the library caret or/and H2O for analyzing
+
+```{r}
+
+#Load necessary packages
+
+if (!require(h2o)) install.packages("h2o")
+library(h2o)
+h2o.init()
+
+#caret package
+
+if (!require(caret)) install.packages("caret")
+if (!require(caretEnsemble)) install.packages("caretEnsemble")
+if (!require(e1071)) install.packages("e1071")
+if (!require(randomForest)) install.packages("randomForest")
+if (!require(gbm)) install.packages("gbm")
+library(caret)
+library(caretEnsemble)
+library(e1071)
+library(randomForest)
+library(dplyr)
+
+
+```
+
+To create a dichotomous, or binary, variable from the "cut" variable, we group the original categories of "cut" into two broad classifications. The "cut" variable consists of multiple categories that describe the quality of the cut, such as Fair, Good, Very Good, Premium, and Ideal. The "Premium" category will include the "Premium" and "Very Good" values from the original "cut" variable and were grouped together to represent a higher quality of cut. The "Otherwise" group will include the remaining values—"Fair," "Good," and "Ideal." This group is defined to capture any quality that is not specifically Premium or Very Good.
+
+
+```{r}
+#Categories of variable cut
+unique(diamonds$cut)
+
+#create a dichotomy variable 
+diamonds <- diamonds %>%
+  mutate(cut_dichotomy = ifelse(cut %in% c("Premium", "Very Good"), 1, 0))
+
+
+head(diamonds)
+
+```
+
+This following section prepares the diamonds dataset to be compatible with the H2O package by standardizing variable types. The transformation ensures that all categorical data is treated as unordered, which simplifies the compatibility with H2O’s algorithms. Additionally, the code specifies that the variable cut_dichotomy should remain a factor to ensure it is correctly interpreted as categorical in further analysis. The code str(diamonds) is to confirm that these adjustments have been successfully applied.
+
+```{r}
+#identify ordered factor variables existence
+str(diamonds)
+
+#Convert ordered factor variables to a regular factor
+
+diamonds[] <- lapply(diamonds, function(x) {
+  if (is.ordered(x)) {
+    return(as.factor(as.character(x)))
+  } else {
+    return(x)
+  }
+})
+
+
+#maintain cut_dichotomy as a factor
+diamonds <- diamonds %>%
+  mutate(cut_dichotomy = factor(cut_dichotomy))
+
+
+```
+
+**Converting the data into an H2O frame:**
+
+
+```{r}
+#convert data to h2o frmae
+
+diamonds.hex = as.h2o(diamonds)
+
+#describe
+h2o.describe(diamonds.hex)
+
+```
+
+
+This analysis checks to see how well the variables carat, depth, table, x, y, and z predict the binary outcome, cut_dichotomy, in diamonds. Using a binomial logistic regression model, with H2O, we find a low R^2 value of 26%, indicating the model does not explain much of the variance in the dichotomous variable. Due to this result, this model lacks predictive power for diamond cut quality, suggesting that additional or different predictors may be needed. 
+
+```{r}
+
+model <- h2o.glm(
+  x = c("carat", "depth", "table", "x", "y", "z"),  
+  y = "cut_dichotomy",        
+  training_frame = diamonds.hex,
+  family = "binomial"   
+)
+
+print(model)
+
+```
+
+In this portion, we modify the model to analyze how the numerical predictors-- carat, depth, table, x, y, and z-- relate to the different categories of the categorical variable color. The R^2 value from this model is significantly higher, with a value of 0.762, indicating the model explains about 76.2% of the variance in predicting the color variable. Although this fit is much stronger than the latter, there is still almost a quarter of the variance left unexplained. 
+
+The confusion matrix gives insight to how well the model classifies each color category. The matrix shows the counts of correctly and incorrectly printed classes for each actual color category, giving us a numerical visualization of where the model performs well and where it doesn't. For instance, the model appears to have high misclassification rates across most categories, particularly D and J with error values of 1.0000. The overall mean per-class error is approximately 0.825, indicating the model struggles to make accurate classifications for each color.
+ 
+
+```{r}
+
+model <- h2o.glm(
+  x = c("carat", "depth", "table", "x", "y", "z"),  
+  y = "color",        
+  training_frame = diamonds.hex,
+  family = "multinomial"   #we change the type model to use a categorical response
+)
+
+print(model)
+
+```
+
+
+Taking into account the previous results, we want to simplify our model by including less variables to see if there is an improvement for the relation for the color variable. 
+
+Despite reducing the number of variables, the model's performance continues to lack the strength and accuracy needed to make confident predictions regarding diamond color. The R^2 value for the relaxed model is slightly lower than the latter, which is intuitive as we are removing variables that could have prediction relationships, however small they may be. This outcome suggests that the physical dimensions alone may not solely represent the factors influencing color, highlighting the need for additional or alternative variables that could better capture the relationships within.
+
+
+```{r}
+
+model <- h2o.glm(
+  x = c("x", "y", "z"),  
+  y = "color",        
+  training_frame = diamonds.hex,
+  family = "multinomial"   #we change the type model to use a categorical response
+)
+
+print(model)
+```
+
+
+To see how the variables relate to other categorical variables, we can change the predicted variable to cut and check for any improvements. Using the h2o.glm function, we build a multinomial logistic regression model to assess how well these predictors explain the variance in cut. The model shows some improvement in performance compared to previous attempts to predict color, indicating a more promising relationship.  The R^2 value of this model indicates these three variables predict about 64.4% of the variance in the cut variable. This value is good, but not enough to form optimistic conclusions on the strength.
+
+```{r}
+
+model <- h2o.glm(
+  x = c("carat", "depth", "table"),  
+  y = "cut",        
+  training_frame = diamonds.hex,
+  family = "multinomial"   #we change the type model to use a categorical response
+)
+
+print(model)
+
+```
+
+Keeping cut as the categorical variable to be predicted, we decided to bring back the other three numerical variables, x, y, and z, into the model to see if the relationship improves. 
+
+The new R^2 value is 0.663, meaning the model with the remaining three numerical variables predicts 2% more of the variance of cut than the previous model. Although it is an improvement, this value is still not significant to conclude strong prediction relationships. 
+
+
+```{r}
+
+model <- h2o.glm(
+  x = c("carat", "depth", "table", "x", "y","z"),  
+  y = "cut",        
+  training_frame = diamonds.hex,
+  family = "multinomial"   #we change the type model to use a categorical response
+)
+
+print(model)
+
+```
+
+Next, we created the correlation plot and matrix to explore the relationships between numerical variables in the dataset. The "?" in the plot indicate when a relationship with a categorical variable was tested, and those values can not be found without a numerical assignment.
+
+The dark blue colors indicate strong positive correlation, whereas the peach colors indicate negative correlation. The lighter the color, the weaker the correlation. 
+
+There exists different correlation relationships within several pairings:
+1. Carat has strong positive correlations with price, x, y, and z (and vice versa). These relationships indicate the higher the carat, the higher the dimensions and price.
+2. Price has strong positive correlations with x, y, and z (and vice versa). Similarly to Carat, with higher price we can expect higher dimensions.
+3. x, y, and z all have strong positive correlations with each other. This relationship is intuitive as all three variables represent physical measurements of the diamonds. The higher one is, we are likely to see an increase in the other two. 
+4. Depth and Table have a mild negative correlation. This relationship indicates that as the depth of the diamond increases, the table decreases. 
+
+
+```{r}
+cor_matrix <- h2o.cor(diamonds.hex)
+print(cor_matrix)
+
+# Load library to be able to make the plot
+library(corrplot)
+
+str(cor_matrix)
+cor_matrix <- as.matrix(cor_matrix)
+
+# Correlation plot
+corrplot(cor_matrix, method = "circle", type = "upper", tl.col = "black", tl.srt = 45)
+
+```
+We use the following code for numerical variables to extract a specific correlation value of interest, that is, between depth and price. Returned is a value of -0.10, indicating a very mild negative correlation between the two. This may indicate that, as depth increases, we would expect the price to ever so slightly decrease. However, this relationship is not very strong.
+
+```{r}
+if (!require(datarium)) install.packages("datarium")
+library(datarium)
+
+cor(diamonds$depth, diamonds$price)
+
+```
+Since price had such strong correlations with several of the numerical variables, we had an interest to see how well the model would predict it. 
+
+Despite this, we found an R^2 value of 0.614, indicating the numerical variables only predict about 61.4% of the variance in the price variable. In the correlation plot from earlier, we did notice very weak correlations with variables depth, table, and the dichotomous cut value, so this result reflects the loss of coverage from those variables. 
+
+```{r}
+
+model <- h2o.glm(
+  x = c("carat", "depth", "table", "x", "y", "z"),  
+  y = "price",        
+  training_frame = diamonds.hex,
+  family = "gaussian" #in this case will be a gaussian model 
+)
+
+print(model)
+
+```
+
+
+
+
+## II. Split the Data using techniques in Carat/H2O
+
+In the following section, we performed data splitting on the diamonds.hex dataset to create training and testing subsets for model evaluation. We used the h2o.splitFrame function to randomly partition the data, allocating 80% of the rows to the training set and the remaining 20% to the testing set. The seed is set to ensure reproducibility of the results. After splitting the data, we check and print the number of rows in both the training and testing sets to confirm that the split has been done correctly.
+
+
+```{r}
+splits = h2o.splitFrame(data = diamonds.hex, ratios = c(0.8), seed = 198)
+train = splits[[1]]
+test = splits[[2]]
+
+
+#check number of rows in train set and test set
+#Original set has 53940 rows
+
+print(paste0("Number of rows in train set: ", h2o.nrow(train)))
+print(paste0("Number of rows in test set: ", h2o.nrow(test)))
+
+```
+# III. Apply tecniques 
+
+# FIRST TECNIQUE
+# "Random Forest with H2o"
+
+In the following code, we implement a technique called Random Forest using the H2O package. We chose the numerical predictors from the model to be the predictors and the variable "cut" to be the variable of prediction.
+
+
+```{r}
+rf = h2o.randomForest(x = c("depth", "table", "x", "y", "z", "carat"),
+                      y = c("cut"), training_frame = train, model_id = "our.rf", 
+                      seed = 1234)
+print(rf)
+```
+Below are the results when we model cut by the numerical variables using Random Forest technique. We find the R^2 value to be 0.824, which is fairly strong as this means this model predicts about 82.4% of the variance in the cut variable. 
+
+Looking at the confusion matrix, all errors are below 0.5, meaning the majority of the cut classes across all predictor variables were predicted correctly. The average was found to be only about 0.22, which is much better than the previous models. 
+ 
+```{r}
+#option 1 test data
+
+rf_perf1 = h2o.performance(model = rf, newdata = test)
+print(rf_perf1)
+
+```
+**Confusion matrix** 
+
+```{r}
+confusion_matrix <- h2o.confusionMatrix(rf_perf1)
+print(confusion_matrix)
+```
+
+
+**Prediction with test data**
+
+The table below shows the prediction probabilities for each cut category. The first column indicates the predicted cut categories in the test set. The remaining columns show the predicted probabilities for each cut category. These values represent the model's confidence in the predictions. For example, given that the values in the cells represent the likelihood that a given data point falls into each cut category, the first diamond is predicted by the model to have a "Good" cut with a probability of 74.8%.
+
+Interpreting the values:
+A higher probability, a value close to 1, for an individual category indicates strong confidence in that prediction. If a diamond has multiple probabilities close to each other, this may suggest the model's uncertainty in the prediction. 
+
+
+```{r}
+predictions = h2o.predict(rf, test)
+print(predictions)
+```
+
+# Reduced Model
+
+Here, we are creating a new random forest, keeping cut as the variable to be predicted, but taking away three of the six numerical variables, price, depth, and table.
+	
+The model gives us an R^2 value of 0.696, which is almost 12% less variability being explained than in the previous model. This is likely due to the fact that, although there was not a strong correlation with cut and the three removed variables, they still had some proportion of prediction for the variable.
+
+Comparing the error rates, the values are ever so slightly higher in this model, indicating the variables x, y, and z do not predict the cut variable as accurately as they do when table, depth, and price are taken into account in the model. The total error rate is 0.3655, compared to the earlier error value of 0.22, indicating that the model with more variables predicted cut more accurately.
+
+
+```{r}
+## option 2
+rf = h2o.randomForest(x = c("x", "y", "z"),
+                      y = c("cut"), training_frame = train, model_id = "our.rf", 
+                      seed = 1234)
+print(rf)
+```
+
+**Reduced Model Test Set:**
+
+```{r}
+rf_perf2 = h2o.performance(model = rf, newdata = test)
+print(rf_perf2)
+```
+
+**Confusion matrix: **
+
+```{r}
+confusion_matrix <- h2o.confusionMatrix(rf_perf2)
+print(confusion_matrix)
+```
+
+**Prediction with test data**
+
+The prediction table reveals insightful results about the strength of this model in the confidence it has in its own predictions. It is interesting that the “Fair” category has extremely low probabilities, indicating the model has extremely little confidence in the predictions for that category of cuts. The “Very Good” category has the highest levels of probability across all rows, indicating the model has high confidence in the predictions for this category. 
+
+```{r}
+predictions = h2o.predict(rf, test)
+print(predictions)
+```
+
+
+# SECOND TECHNIQUE
+# "Neural Network" 
+
+To run a new technique, called Neural Network, we first define the variables for predictors and one for response. Then, we run the model with the training data set.
+
+The difference between neural networks and random forests is that neural networks are flexible models that excel at capturing complex patterns in high-dimensional data. Random forests are ensemble methods that build multiple decision trees to improve accuracy and interpretability, performing well on structured data with less need for extensive tuning.
+
+```{r}
+# Set the predictor and response variables
+# Define specific predictor column names
+predictors <- c("depth", "table", "x", "y", "z", "carat")
+response = "cut" # Cut is our response
+
+# Define and train the neural network model
+model = h2o.deeplearning(
+  x = predictors,
+  y = response,
+  training_frame = train,
+  validation_frame = test,
+  activation = "RectifierWithDropout", # Activation function
+  hidden = c(10, 10), 
+  epochs = 100, # Number of training epochs
+  rate = 0.01, # Learning rate
+  input_dropout_ratio = 0.2, # Input dropout ratio
+  hidden_dropout_ratios = c(0.5, 0.5) # Dropout ratios for each hidden layer
+)
+
+
+print(model)
+```
+
+Evaluating the model’s performance on the test data set, we observe various extremely high error rates, with two being 1.000. This indicates that, for fair and good, they were not predicted right at all by our model. This is a concerning result, as we expect some proportion to be predicted. The total error percentage is almost 40%, indicating a large amount of predictions made by the model were inaccurate. 
+
+The output does not give us an R^2, which is the value representing the percentage of variance explained by the predictions, but we can use the value of the Root Mean Squared Error, or RMSE. In this model, the RMSE is 0.615. RMSE measures the average magnitude of the errors between predicted values and actual values, providing a measure of how well the model's predictions match the observed data. A Root Mean Squared Error of 0.6152 indicates that, on average, the predictions made by the model deviate from the actual values by approximately 0.6152 units of our variable. This value is typically slightly less than the R^2, so we can expect our R^2 to be around this number, indicating that at least the majority of variance of the variable “cut” is predicted.
+
+
+```{r}
+
+# Evaluate the model performance on the test set
+perf = h2o.performance(model, newdata = test)
+
+# Print the model performance
+print(perf)
+```
+
+**Predict on the test set **
+The following code prints the predicted versus actual cuts for all 10,780 observations. We are only showing the first ten.
+
+```{r}
+# Predict on the test set 
+predictions = h2o.predict(model, newdata = test)
+
+
+# Convert predictions and actual values to factors for comparison
+predicted_values = as.factor(as.vector(predictions$predict))
+actual_values = as.factor(as.vector(test$cut))
+# Combine them into a data frame with two columns
+results_df = data.frame(Predicted = predicted_values, Actual = actual_values)
+# Display the results
+print(head(results_df,10))
+```
+
+**Confusion matrix**
+
+The results from the confusion matrix show the predicted classifications of diamonds based on the model but sorted by the actual group they belong to. For instance, among the actual "Ideal" diamonds, 4019 were correctly predicted as "Ideal," while 1,421 were incorrectly classified. The model performed relatively well for "Premium" diamonds, correctly predicting 2,413 instances, but struggled with "Very Good" diamonds, where only 131 were correctly identified out of a total of 1,410. Overall, this matrix indicates a mix of correct and incorrect predictions across categories, suggesting that the model may need improvement to enhance its accuracy in classifying diamond qualities.
+
+```{r}
+# Generate the confusion matrix
+confusion_matrix = table(Predicted = predicted_values, Actual = actual_values)
+# Print the confusion matrix
+print(confusion_matrix)
+
+
+```
+
+# Neural Network attempt to improve
+
+Here we are defining which variables are the predictors and the response, and running the model with train data.
+
+
+```{r}
+# Set the predictor and response variables
+# Define specific predictor column names
+predictors <- c("depth", "table", "x", "y", "z", "carat")
+response = "cut" # cut is our response
+
+# Define and train the neural network model
+model = h2o.deeplearning(
+  x = predictors,
+  y = response,
+  training_frame = train,
+  validation_frame = test,
+  activation = "RectifierWithDropout", # Activation function
+  hidden = c(20, 20), # Two hidden layers with 10 neurons each
+  epochs = 150, # Number of training epochs
+  rate = 0.001, # Learning rate
+  input_dropout_ratio = 0.2, # Input dropout ratio
+  hidden_dropout_ratios = c(0.5, 0.5) # Dropout ratios for each hidden layer
+)
+
+
+print(model)
+
+```
+Evaluating the model performance on the test data set, we can immediately notice the RMSE is reduced to around 0.57, which means our predictions in this model are, on average, a smaller distance away from the actual observations than the original model. Likewise, the previous model gave us an error value of around 0.4, whereas this model gives us a total error value of 0.335. Changing the restrictions within the model reduced the RMSE and error value, meaning our model was able to more accurately predict the values to what they actually were observed to be.
+
+```{r}
+perf = h2o.performance(model, newdata = test)
+
+# Print the model performance
+print(perf)
+```
+
+**Predict on the test set**
+(only printing 10 of 10,000+ rows):
+
+```{r}
+# Predict on the test set 
+predictions = h2o.predict(model, newdata = test)
+
+
+# Convert predictions and actual values to factors for comparison
+predicted_values = as.factor(as.vector(predictions$predict))
+actual_values = as.factor(as.vector(test$cut))
+# Combine them into a data frame with two columns
+results_df = data.frame(Predicted = predicted_values, Actual = actual_values)
+# Display the results
+print(head(results_df,10))
+```
+
+
+**Confusion matrix **
+
+The confusion matrix for this model has very interesting results. First, the model is only predicting 53 Fair observations, which is a significantly small proportion of the actual fair observations, with 254. For this category, the error rate was 0.82, so this result is somewhat expected. Similarly, the error rate for the “Good” category was 0.92, and the mode is only predicting under 200 observations for this variable. The model mostly predicts the observations to be “Ideal”, “Premium”, or “Very Good”, and predicts each of those variables relatively well. 
+
+```{r}
+
+# Generate the confusion matrix
+confusion_matrix = table(Predicted = predicted_values, Actual = actual_values)
+# Print the confusion matrix
+print(confusion_matrix)
+
+
+```
+
+
+#THIRD TECHNIQUE USING CARET
+# "Decision Trees"
+
+To be able to use this technique we have to downside the amount of data and cross-validations. We select randomly 5000 rows which represents 10% of the total data set. 
+The random forest model was trained on a dataset of 4,003 samples and 10 predictors to classify diamonds into five quality categories: 'Fair,' 'Good,' 'Ideal,' 'Premium,' and 'Very Good.' Using a three-fold cross-validation approach, the model achieved varying accuracy rates based on the number of predictors considered (mtry), with the highest accuracy of approximately 86.01% and a Kappa statistic of 0.8043 when 11 predictors were used. The Kappa value indicates a strong level of agreement between predicted and actual classifications beyond what would be expected by chance. Ultimately, the model selected 11 as the optimal number of predictors to maximize classification accuracy.
+
+
+```{r}
+# Set a seed for reproducibility
+set.seed(123)
+
+# Sample a smaller subset for testing
+diamonds_random <- diamonds[sample(nrow(diamonds), 5000), ]
+
+# Create a training (80%) and testing (20%) split
+trainIndex <- createDataPartition(diamonds_random$cut, p = 0.8, list = FALSE)
+trainData <- diamonds_random[trainIndex, ]
+testData <- diamonds_random[-trainIndex, ]
+
+# Define the training control
+trainControl <- trainControl(method = "cv", number = 3)  # Reduced to 3 folds
+
+# Train the model using the random forest algorithm
+model <- train(cut ~ ., data = trainData, method = "rf",
+               trControl = trainControl)
+
+# Print the model details
+print(model)
+
+
+```
+
+
+**Test data**
+
+Similarly to the original model, the model on the test data also recommends the strongest model has 11 predictors. The accuracy for this model is slightly lower than before, with the highest accuracy value of 0.82. The kappa statistic for this accuracy level is 0.75, indicating that the model has a strong agreement between the predicted and observed model, but it is still not as good as the previous model.
+
+```{r}
+
+#Test set model
+
+# Train the model using the random forest algorithm for the testing set
+model_test = train(cut ~ ., data = testData, method = "rf",
+trControl = trainControl)
+# Print the model details
+print(model_test)
+```
+**Predictions on the test data**
+
+```{r}
+# Make predictions on the test data
+predictions = predict(model, newdata = testData)
+# Display the predictions
+print(head(predictions, 10))
+```
+
+**Confusion matrix**
+
+The confusion matrix for the testing model shows very ideal results in prediction accuracy. The predicted categories were almost completely correct, with only a few observations in the other categories. Unlike what we have seen in previous models, there are a lot of zeros in the confusion matrix in the categories that do not match. This is a very good result, as we do not have many incorrect predictions. The overall accuracy percentage is around 86% and the kappa statistic is 0.8, revealing that the model is not perfect, but for real data, it does a good job at predicting the data.
+
+```{r}
+# Create a confusion matrix
+confMatrix = confusionMatrix(predictions, testData$cut)
+# Print the confusion matrix and other metrics
+print(confMatrix)
+```
+
+**Visualize the results**
+
+The plot given by this code shows the level of importance of each feature in the model compared to each other. The further to the right the points fall, the higher importance they have in determining the prediction. 
+
+Clarity and color appear to have the least amount of importance on the predictions, whereas the cut_dichotomy has the greatest. Since we are predicting cut, this result is intuitive. Of the numerical variables, depth has the strongest value, followed by table. The X variable, representing the length, has the most importance when compared to the other measurement variables, y and z. Price has a lower importance to the prediction compared to y, but a higher prediction value compared to z. Carat falls slightly behind z, but ahead of clarity and color. 
+
+These results are interesting to show how the variables we are using to make predictions individually influence the decision our model makes.
+
+```{r}
+# Plot variable importance
+varImpPlot(model$finalModel)
+```
+
+# IV. ESEMBLE 
+
+The Ensemble function  from Caret package in R is used to train multiple models at the same time; for this exercise the models to be tested were Random forest. Stochastic Gradiend Boosting and k-Nearest Neighbors.
+
+
+```{r}
+
+# Convert cut to a factor with valid names
+trainData$cut <- factor(trainData$cut, labels = make.names(levels(trainData$cut)))
+
+# Define the training control
+trainControl = trainControl(method = "cv", number = 10,
+savePredictions = "final")
+# Define the models to be used in the ensemble
+capture.output({
+models = caretList(
+cut ~ ., data = trainData, trControl = trainControl,
+methodList = c("rf", "gbm", "knn")
+)
+}, file = if(.Platform$OS.type == "windows") "NUL" else "/dev/null")
+# Print the summary of the models
+print(models)
+```
+
+The Ensemble function  from Caret package in R is used to train multiple models at the same time; for this exercise the models to be tested were Random forest. Stochastic Gradiend Boosting and k-Nearest Neighbors.
+
+The first technique, Random Forest, is used to build multiple decision trees during training and merges their outputs to  improve accuracy and control overfitting. 
+This model's performance was evaluated using different values for the parameter "mtry," which determines the number of variables randomly sampled at each split in the tree-building process. With a mtry of 21, the highest accuracy achieved was 0.8666, which indicates the proportion of correct predictions made by the model compared to the total predictions, here we aim to the highest accuracy. Also it provided a Kappa value, which measures the proportion of agreement between predicted classifications and actual classifications, it ranges between -1, less agreement,  to 1 perfect agreement, with of approximately 0.8133 it indicates a strong level of agreement between the model's predictions for the categorical variable “cut” and the actual values of it. 
+
+The second technique Stochastic Gradient Boosting will build a model in a stage-wise fashion (building models incrementally). The results suggest that using deeper trees (interaction.depth of 3), where a higher depth allows the model to capture more complex patterns but can also lead to overfitting. With 150 trees yields the best performance in terms of  accuracy with 0.8734 and Kappa value of 0.8226, indicating also a strong predictive performance and agreement between the model’s predictions for the variable “cut” and actual outcomes. The tuning parameters "shrinkage" (controlling the contribution of each tree, also known as learning rate) and "n.minobsinnode" (the minimum number of observations in a node) were kept constant at 0.1 and 10, respectively. The consistent increase in metrics of accuracy and Kappa as the interaction depth increases indicates that the model benefits from capturing more complex patterns in the data, while the tuning parameters like shrinkage and minimum observations help mitigate overfitting risks. 
+
+
+The third technique used was k-Nearest Neighbors (knn), here the model evaluated different values of "k,"  as k =5, which represents the number of nearest neighbors considered when making a classification decision. The highest accuracy recorded was 0.3920, it indicates a low proportion of correctly classified instances compared to the total number of instances.  Finally it gave a Kappa value of 0.1170. In this technique the predictions for all categories are very low, with no significant results observed and also indicating a relatively weak performance compared to the other models.
+
+It can be concluded that Random Forest and Stochastic Gradient Boosting models demonstrated superior accuracy and Kappa values, indicating better classification performance than the k-Nearest Neighbors model.
+
+
+**Create an ensemble model using caretEnsemble**
+ 
+```{r}
+ensembleModel = caretEnsemble(models, metric = "Accuracy", trControl = trainControl)
+# Print the summary of the ensemble model
+print(ensembleModel)
+```
+The analysis involved training an ensemble model using 4,003 samples and 15 predictors, classifying instances into one of five “cut” categories: 'Fair', 'Good', 'Ideal', 'Premium', and 'Very.Good'. The model optimization was performed using the Mean Squared Error (MSE) .
+The ensemble model achieved an accuracy of 0.8764, indicating that approximately 87.64% of the predictions were correct. Also the Kappa value of 0.8269 signifies a high level of agreement between predicted and actual classifications for the variable “cut”. The RMSE value is 0.1869, suggesting that, on average, the predictions deviate from the actual values by approximately 0.19.
+
+The weights suggest that Random Forest primarily predicts 'Fair' and 'Good', while Gradient Boosting focuses more on 'Ideal', 'Premium', and 'Very.Good'. 
+
+As seen before for the technique  k-Nearest Neighbors all the class weights are 0.00, indicating that k-NN did not contribute to the predictions effectively for the variable diamonds “cut”.
+
+So we can assume that the ensemble model utilizing Random Forest and Gradient Boosting shows better results in classifying instances into the categories of the variable “cut” . The high accuracy and Kappa values reflect a robust predictive model.
+
+**Make predictions**
+
+```{r}
+# Make predictions on the test data using the ensemble model
+ensemblePredictions = predict(ensembleModel, newdata = testData)
+# Display the predictions
+# print(ensemblePredictions)
+stack_predict = as.matrix(ensemblePredictions)
+# Apply a function to determine
+result_vector = apply(stack_predict, 1, function(row) {
+colnames(stack_predict)[which.max(row)]
+})
+result_vector = factor(result_vector)
+head(data.frame(result_vector,testData$cut),10)
+```
+
+**Confusion matrix**
+
+```{r}
+
+print(levels(result_vector))
+print(levels(testData$cut))
+
+#we have to align the levels in order to create the confusion matrix 
+result_vector <- factor(result_vector, levels = levels(testData$cut))
+
+# Create a confusion matrix
+confMatrix = confusionMatrix(result_vector, testData$cut)
+# Print the confusion matrix and other metrics
+print(confMatrix)
+```
+
+The confusion matrix results for the ensemble model shows an accuracy of 88.5%, with a Kappa of 0.823, indicating a good agreement between the predicted and actual values of the variable “cut.
+
+As seen in the matrix , it clearly  noted  the prediction of 'Fair', 'Good', 'Ideal', and 'Premium' diamonds cut. The sensitivity for those cuts were 92.6%, 92.4% and 98.9% respectively, which indicates the high ability to recognize the cuts when comparing to the actual values. The 'Premium' class received perfect sensitivity of 100%, signifying that the model accurately predicted every 'Premium' instance in the test set.
+
+Specificity metrics were also good across the diamond cut, reflecting the model's effectiveness in correctly rejecting non-target instances. For example, the specificity for 'Fair' was 99.6%, while 'Good' achieved 99.6%.
+
+On the other hand, the model faces challenges with the 'Very Good' cut, registering a sensitivity of 0%. This means that no instances of 'Very Good' were correctly identified, indicating a weakness in the model's performance for this diamond “cut”. Even when the specificity of 100% for 'Very Good', which shows that all non-'Very Good' predictions were accurate, the lack of positive predictions revealed an area for improvement.
+
+The ensemble model demonstrates strong overall performance, achieving high accuracy and significant alignment between predicted and actual values for the majority of classes. However, in order to predict 'Very Good' cut some changes will need to be made, as the current model has difficulty accurately identifying it.
+
